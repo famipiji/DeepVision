@@ -1,0 +1,25 @@
+# ── .NET ──────────────────────────────────────────────────────────────────────
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.log
+appsettings.Development.json
+
+# Tesseract language data (downloaded at runtime)
+**/tessdata/
+
+# ── Node / Angular ─────────────────────────────────────────────────────────────
+node_modules/
+dist/
+.angular/
+*.js.map
+
+# ── Claude Code ───────────────────────────────────────────────────────────────
+.claude/
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
