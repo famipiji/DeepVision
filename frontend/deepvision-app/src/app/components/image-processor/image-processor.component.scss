@@ -443,6 +443,19 @@ details[open] .steps-detail__summary::before { content: '▼ '; }
   }
 }
 
+/* ── Details empty state ─────────────────────────────────────────────────── */
+.details-empty {
+  padding: 24px 20px;
+  color: var(--color-text-dim);
+  font-size: 0.85rem;
+  font-style: italic;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  &__icon { font-size: 1rem; flex-shrink: 0; }
+}
+
 /* ── Key Details Panel ───────────────────────────────────────────────────── */
 .details-panel {
   background: var(--color-surface);
