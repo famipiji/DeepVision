@@ -9,6 +9,23 @@ public class ProcessImageResponse
     public string? ImageMimeType { get; set; }
     public string? ExtractedText { get; set; }
     public ImageMetadata? Metadata { get; set; }
+    public DocumentDetails? DocumentDetails { get; set; }
+}
+
+public class DocumentDetails
+{
+    public string? DocumentType { get; set; }
+    public string? InvoiceNumber { get; set; }
+    public string? InvoiceDate { get; set; }
+    public string? DueDate { get; set; }
+    public string? VendorName { get; set; }
+    public string? CustomerName { get; set; }
+    public string? SubTotal { get; set; }
+    public string? TaxAmount { get; set; }
+    public string? TotalAmount { get; set; }
+    public string? Currency { get; set; }
+    public string? PaymentTerms { get; set; }
+    public Dictionary<string, string>? AdditionalFields { get; set; }
 }
 
 public class ImageMetadata

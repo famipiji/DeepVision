@@ -107,6 +107,16 @@ public class ImageController : ControllerBase
 
             var combinedText = string.Join("\n\n", pageTexts);
 
+            // Step 3 — Extract structured document details from the cleaned text
+            DocumentDetails? documentDetails = null;
+            if (!string.IsNullOrWhiteSpace(combinedText) &&
+                combinedText != "[No text detected in this image]")
+            {
+                var detailsResult = await _deepSeekService.ExtractDocumentDetailsAsync(combinedText);
+                if (detailsResult.Success)
+                    documentDetails = detailsResult.Details;
+            }
+
             return Ok(new ProcessImageResponse
             {
                 Success = true,
@@ -114,6 +124,7 @@ public class ImageController : ControllerBase
                 ProcessedImageBase64 = Convert.ToBase64String(processed.ProcessedBytes),
                 ImageMimeType = processed.MimeType,
                 ExtractedText = combinedText,
+                DocumentDetails = documentDetails,
                 Metadata = new ImageMetadata
                 {
                     OriginalWidth = processed.OriginalWidth,
