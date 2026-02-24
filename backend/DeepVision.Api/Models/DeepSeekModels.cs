@@ -15,6 +15,16 @@ public class DeepSeekRequest
 
     [JsonPropertyName("temperature")]
     public double Temperature { get; set; } = 0.1;
+
+    [JsonPropertyName("response_format")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ResponseFormat? ResponseFormat { get; set; }
+}
+
+public class ResponseFormat
+{
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "json_object";
 }
 
 public class DeepSeekMessage

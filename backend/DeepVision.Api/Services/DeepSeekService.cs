@@ -72,42 +72,43 @@ public class DeepSeekService : IDeepSeekService
 
     public async Task<DocumentDetailsResult> ExtractDocumentDetailsAsync(string cleanedText)
     {
+        _logger.LogInformation("=== Starting document details extraction ({Length} chars) ===", cleanedText.Length);
         try
         {
             var apiKey = _configuration["DeepSeek:ApiKey"] ?? string.Empty;
             if (string.IsNullOrWhiteSpace(apiKey) || apiKey == "YOUR_DEEPSEEK_API_KEY_HERE")
-                return new DocumentDetailsResult { Success = false, ErrorMessage = "DeepSeek API key not configured." };
+            {
+                _logger.LogWarning("API key not configured — skipping details extraction");
+                return new DocumentDetailsResult { Success = false, ErrorMessage = "API key not configured." };
+            }
 
             var baseUrl = _configuration["DeepSeek:BaseUrl"] ?? "https://api.deepseek.com";
             var model = _configuration["DeepSeek:Model"] ?? "deepseek-chat";
+            _logger.LogInformation("Calling {BaseUrl} with model {Model}", baseUrl, model);
 
             const string systemPrompt =
-                "You are an expert document analyst specializing in invoices, receipts, and business documents. " +
-                "Analyze the provided document text and extract key information. " +
-                "Return ONLY a valid JSON object — no markdown, no code fences, no explanation. " +
-                "Use null for any field not found in the document. " +
-                "Use this exact structure:\n" +
-                "{\n" +
-                "  \"documentType\": \"Invoice|Receipt|PurchaseOrder|Statement|CreditNote|DeliveryNote|Other\",\n" +
-                "  \"invoiceNumber\": null,\n" +
-                "  \"invoiceDate\": null,\n" +
-                "  \"dueDate\": null,\n" +
-                "  \"vendorName\": null,\n" +
-                "  \"customerName\": null,\n" +
-                "  \"subTotal\": null,\n" +
-                "  \"taxAmount\": null,\n" +
-                "  \"totalAmount\": null,\n" +
-                "  \"currency\": null,\n" +
-                "  \"paymentTerms\": null,\n" +
-                "  \"additionalFields\": {}\n" +
-                "}\n" +
-                "Place any other important key-value pairs found in the document into additionalFields.";
+                "You are an expert document analyst. Extract key information from the document text and return ONLY a " +
+                "raw JSON object (no markdown, no explanation). Use null for missing fields. " +
+                "Schema: {" +
+                "\"documentType\": \"Invoice|Receipt|PurchaseOrder|Statement|CreditNote|DeliveryNote|Other\", " +
+                "\"invoiceNumber\": \"string or null\", " +
+                "\"invoiceDate\": \"string or null\", " +
+                "\"dueDate\": \"string or null\", " +
+                "\"vendorName\": \"string or null\", " +
+                "\"customerName\": \"string or null\", " +
+                "\"subTotal\": \"string or null\", " +
+                "\"taxAmount\": \"string or null\", " +
+                "\"totalAmount\": \"string or null\", " +
+                "\"currency\": \"string or null\", " +
+                "\"paymentTerms\": \"string or null\", " +
+                "\"additionalFields\": {\"key\": \"value\"} }";
 
             var request = new DeepSeekRequest
             {
                 Model = model,
                 MaxTokens = 1024,
                 Temperature = 0.1,
+                ResponseFormat = new ResponseFormat { Type = "json_object" },
                 Messages =
                 [
                     new DeepSeekMessage { Role = "system", Content = systemPrompt },
@@ -123,19 +124,27 @@ public class DeepSeekService : IDeepSeekService
             var httpResponse = await _httpClient.SendAsync(httpRequest);
             var responseJson = await httpResponse.Content.ReadAsStringAsync();
 
+            _logger.LogInformation("Details API response status: {Status}", httpResponse.StatusCode);
+
             if (!httpResponse.IsSuccessStatusCode)
             {
-                _logger.LogWarning("DeepSeek details extraction failed {Status}: {Body}", httpResponse.StatusCode, responseJson);
-                return new DocumentDetailsResult { Success = false, ErrorMessage = "DeepSeek request failed." };
+                _logger.LogWarning("Details extraction FAILED {Status} — full body: {Body}", httpResponse.StatusCode, responseJson);
+                return new DocumentDetailsResult { Success = false, ErrorMessage = $"API returned {(int)httpResponse.StatusCode}" };
             }
 
             var deepSeekResponse = JsonSerializer.Deserialize<DeepSeekResponse>(responseJson, JsonOptions);
             var content = deepSeekResponse?.Choices?.FirstOrDefault()?.Message?.Content;
 
-            if (string.IsNullOrWhiteSpace(content))
-                return new DocumentDetailsResult { Success = false, ErrorMessage = "Empty response from DeepSeek." };
+            _logger.LogInformation("Raw details content (first 400 chars): {Content}",
+                content?.Substring(0, Math.Min(400, content?.Length ?? 0)));
 
-            // Strip markdown code fences if the model includes them despite instructions
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                _logger.LogWarning("Empty content in details response");
+                return new DocumentDetailsResult { Success = false, ErrorMessage = "Empty response from API." };
+            }
+
+            // Strip markdown code fences if the model wraps JSON in them
             content = content.Trim();
             if (content.StartsWith("```"))
             {
@@ -145,17 +154,71 @@ public class DeepSeekService : IDeepSeekService
                     content = content[(firstNewLine + 1)..lastFence].Trim();
             }
 
-            var parseOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            var details = JsonSerializer.Deserialize<DocumentDetails>(content, parseOptions);
+            // Robust parsing: handle non-string values and any property casing the LLM may use
+            DocumentDetails details;
+            try
+            {
+                using var jsonDoc = JsonDocument.Parse(content);
+                var root = jsonDoc.RootElement;
 
-            _logger.LogInformation("Document details extracted: type={Type}, invoice={Invoice}",
-                details?.DocumentType, details?.InvoiceNumber);
+                // Build a case-insensitive lookup of all top-level properties
+                var props = root.EnumerateObject()
+                    .ToDictionary(p => p.Name, p => p.Value, StringComparer.OrdinalIgnoreCase);
+
+                // Safely read any element as a string (handles numbers, booleans, etc.)
+                static string? ToStr(JsonElement el) =>
+                    el.ValueKind switch
+                    {
+                        JsonValueKind.String => el.GetString(),
+                        JsonValueKind.Null or JsonValueKind.Undefined => null,
+                        _ => el.GetRawText()
+                    };
+
+                string? Get(string name) =>
+                    props.TryGetValue(name, out var el) ? ToStr(el) : null;
+
+                // Parse additionalFields — values may be strings, numbers, etc.
+                Dictionary<string, string>? additionalFields = null;
+                if (props.TryGetValue("additionalFields", out var afEl) && afEl.ValueKind == JsonValueKind.Object)
+                {
+                    additionalFields = [];
+                    foreach (var prop in afEl.EnumerateObject())
+                    {
+                        var v = ToStr(prop.Value);
+                        if (v != null) additionalFields[prop.Name] = v;
+                    }
+                }
+
+                details = new DocumentDetails
+                {
+                    DocumentType   = Get("documentType"),
+                    InvoiceNumber  = Get("invoiceNumber"),
+                    InvoiceDate    = Get("invoiceDate"),
+                    DueDate        = Get("dueDate"),
+                    VendorName     = Get("vendorName"),
+                    CustomerName   = Get("customerName"),
+                    SubTotal       = Get("subTotal"),
+                    TaxAmount      = Get("taxAmount"),
+                    TotalAmount    = Get("totalAmount"),
+                    Currency       = Get("currency"),
+                    PaymentTerms   = Get("paymentTerms"),
+                    AdditionalFields = additionalFields?.Count > 0 ? additionalFields : null
+                };
+            }
+            catch (JsonException jex)
+            {
+                _logger.LogWarning("JSON parse failed: {Message} — content was: {Content}", jex.Message, content);
+                return new DocumentDetailsResult { Success = false, ErrorMessage = $"JSON parse failed: {jex.Message}" };
+            }
+
+            _logger.LogInformation("=== Details extracted OK: type={Type}, invoice={Invoice}, vendor={Vendor}, total={Total} ===",
+                details.DocumentType, details.InvoiceNumber, details.VendorName, details.TotalAmount);
 
             return new DocumentDetailsResult { Success = true, Details = details };
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error extracting document details");
+            _logger.LogError(ex, "Exception during document details extraction");
             return new DocumentDetailsResult { Success = false, ErrorMessage = ex.Message };
         }
     }
