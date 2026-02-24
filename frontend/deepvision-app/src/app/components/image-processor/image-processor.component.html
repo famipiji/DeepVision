@@ -116,6 +116,87 @@
         </button>
       </div>
 
+      <!-- Key Details panel (shown when document details are available) -->
+      @if (result()?.documentDetails) {
+        <div class="details-panel">
+          <div class="details-panel__header">
+            <h3 class="panel__title">Key Details</h3>
+            @if (result()!.documentDetails!.documentType) {
+              <span class="badge badge--info">{{ result()!.documentDetails!.documentType }}</span>
+            }
+          </div>
+          <div class="details-grid">
+            @if (result()!.documentDetails!.invoiceNumber) {
+              <div class="detail-item">
+                <span class="detail-item__label">Invoice No.</span>
+                <span class="detail-item__value">{{ result()!.documentDetails!.invoiceNumber }}</span>
+              </div>
+            }
+            @if (result()!.documentDetails!.invoiceDate) {
+              <div class="detail-item">
+                <span class="detail-item__label">Invoice Date</span>
+                <span class="detail-item__value">{{ result()!.documentDetails!.invoiceDate }}</span>
+              </div>
+            }
+            @if (result()!.documentDetails!.dueDate) {
+              <div class="detail-item">
+                <span class="detail-item__label">Due Date</span>
+                <span class="detail-item__value">{{ result()!.documentDetails!.dueDate }}</span>
+              </div>
+            }
+            @if (result()!.documentDetails!.vendorName) {
+              <div class="detail-item">
+                <span class="detail-item__label">Vendor / From</span>
+                <span class="detail-item__value">{{ result()!.documentDetails!.vendorName }}</span>
+              </div>
+            }
+            @if (result()!.documentDetails!.customerName) {
+              <div class="detail-item">
+                <span class="detail-item__label">Customer / To</span>
+                <span class="detail-item__value">{{ result()!.documentDetails!.customerName }}</span>
+              </div>
+            }
+            @if (result()!.documentDetails!.paymentTerms) {
+              <div class="detail-item">
+                <span class="detail-item__label">Payment Terms</span>
+                <span class="detail-item__value">{{ result()!.documentDetails!.paymentTerms }}</span>
+              </div>
+            }
+            @if (result()!.documentDetails!.currency) {
+              <div class="detail-item">
+                <span class="detail-item__label">Currency</span>
+                <span class="detail-item__value">{{ result()!.documentDetails!.currency }}</span>
+              </div>
+            }
+            @if (result()!.documentDetails!.subTotal) {
+              <div class="detail-item">
+                <span class="detail-item__label">Sub Total</span>
+                <span class="detail-item__value detail-item__value--amount">{{ result()!.documentDetails!.subTotal }}</span>
+              </div>
+            }
+            @if (result()!.documentDetails!.taxAmount) {
+              <div class="detail-item">
+                <span class="detail-item__label">Tax</span>
+                <span class="detail-item__value detail-item__value--amount">{{ result()!.documentDetails!.taxAmount }}</span>
+              </div>
+            }
+            @if (result()!.documentDetails!.totalAmount) {
+              <div class="detail-item detail-item--total">
+                <span class="detail-item__label">Total Amount</span>
+                <span class="detail-item__value detail-item__value--total">{{ result()!.documentDetails!.totalAmount }}</span>
+              </div>
+            }
+            <!-- Additional fields from the document -->
+            @for (entry of objectEntries(result()!.documentDetails!.additionalFields); track entry[0]) {
+              <div class="detail-item">
+                <span class="detail-item__label">{{ entry[0] }}</span>
+                <span class="detail-item__value">{{ entry[1] }}</span>
+              </div>
+            }
+          </div>
+        </div>
+      }
+
       <!-- Two-column layout -->
       <div class="results__grid">
 

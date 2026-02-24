@@ -186,6 +186,10 @@ export class ImageProcessorComponent {
     }
   }
 
+  objectEntries(obj: Record<string, string> | null | undefined): [string, string][] {
+    return obj ? Object.entries(obj) : [];
+  }
+
   downloadText(): void {
     const text = this.result()?.extractedText;
     if (!text) return;

@@ -443,6 +443,71 @@ details[open] .steps-detail__summary::before { content: '▼ '; }
   }
 }
 
+/* ── Key Details Panel ───────────────────────────────────────────────────── */
+.details-panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+
+  &__header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-surface-2);
+  }
+}
+
+.details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0;
+  padding: 4px 0;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--color-border);
+
+  &:last-child { border-bottom: none; }
+
+  &--total {
+    border-top: 1px solid var(--color-border);
+    background: rgba(108, 99, 255, 0.05);
+  }
+
+  &__label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-dim);
+  }
+
+  &__value {
+    font-size: 0.9rem;
+    color: var(--color-text);
+    font-weight: 500;
+    word-break: break-word;
+
+    &--amount {
+      font-family: var(--font-mono);
+    }
+
+    &--total {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--color-primary);
+      font-family: var(--font-mono);
+    }
+  }
+}
+
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
 .btn {
   display: inline-flex;
