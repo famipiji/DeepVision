@@ -108,7 +108,6 @@ public class DeepSeekService : IDeepSeekService
                 Model = model,
                 MaxTokens = 1024,
                 Temperature = 0.1,
-                ResponseFormat = new ResponseFormat { Type = "json_object" },
                 Messages =
                 [
                     new DeepSeekMessage { Role = "system", Content = systemPrompt },

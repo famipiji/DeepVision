@@ -108,6 +108,8 @@ public class ImageController : ControllerBase
             var combinedText = string.Join("\n\n", pageTexts);
 
             // Step 3 — Extract structured document details from the cleaned text
+            // Small pause to avoid hitting Groq's tokens-per-minute rate limit after the OCR call
+            await Task.Delay(500);
             DocumentDetails? documentDetails = null;
             if (!string.IsNullOrWhiteSpace(combinedText) &&
                 combinedText != "[No text detected in this image]")
