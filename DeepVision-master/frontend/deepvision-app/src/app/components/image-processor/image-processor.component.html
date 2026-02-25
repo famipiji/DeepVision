@@ -1,0 +1,293 @@
+<section class="processor">
+
+  <!-- ── Upload Zone ────────────────────────────────────────────────────── -->
+  @if (isIdle() || isError()) {
+    <div
+      #dropZone
+      class="drop-zone"
+      [class.dragging]="isDragging()"
+      [class.has-error]="isError()"
+      (dragover)="onDragOver($event)"
+      (dragleave)="onDragLeave($event)"
+      (drop)="onDrop($event)"
+      (click)="openFilePicker()"
+      role="button"
+      tabindex="0"
+      aria-label="Upload image or PDF"
+      (keydown.enter)="openFilePicker()"
+      (keydown.space)="openFilePicker()"
+    >
+      <input
+        #fileInput
+        type="file"
+        accept="image/*,application/pdf"
+        class="sr-only"
+        (change)="onFileSelected($event)"
+      />
+
+      <div class="drop-zone__icon">
+        <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="48" height="48" rx="12" fill="currentColor" fill-opacity="0.08"/>
+          <path d="M24 14v12m0 0-4-4m4 4 4-4" stroke="currentColor" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M14 30c0 2.21 1.79 4 4 4h12c2.21 0 4-1.79 4-4" stroke="currentColor"
+                stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+
+      <p class="drop-zone__title">Drop your file here</p>
+      <p class="drop-zone__subtitle">or <span class="link">browse files</span></p>
+      <p class="drop-zone__hint">
+        Images: JPEG · PNG · WebP · BMP · TIFF &nbsp;|&nbsp; Documents: PDF (up to 5 pages)
+        &nbsp;·&nbsp; Max 20 MB
+      </p>
+
+      @if (isError()) {
+        <div class="drop-zone__error">
+          <span class="error-icon">&#9888;</span>
+          {{ errorMessage() }}
+        </div>
+      }
+    </div>
+  }
+
+  <!-- ── Loading ────────────────────────────────────────────────────────── -->
+  @if (isLoading()) {
+    <div class="loading-panel">
+      <div class="loading-panel__preview">
+        @if (previewSrc()) {
+          <img [src]="previewSrc()" alt="Preview" class="preview-thumb"/>
+        } @else if (isPdf()) {
+          <!-- PDF placeholder icon -->
+          <div class="pdf-icon">
+            <svg viewBox="0 0 64 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect width="64" height="80" rx="6" fill="#ef4444" fill-opacity="0.15"/>
+              <path d="M10 0h32l14 14v66H10z" fill="#ef4444" fill-opacity="0.25"/>
+              <path d="M42 0l14 14H42z" fill="#ef4444" fill-opacity="0.6"/>
+              <text x="32" y="52" text-anchor="middle" font-family="Inter,sans-serif"
+                    font-weight="700" font-size="14" fill="#ef4444">PDF</text>
+            </svg>
+          </div>
+        }
+      </div>
+
+      <div class="loading-panel__status">
+        <div class="spinner"></div>
+        <p class="loading-panel__label">{{ statusLabel() }}</p>
+        <p class="loading-panel__file">{{ selectedFile()?.name }}</p>
+      </div>
+
+      <div class="steps">
+        <div class="step" [class.step--active]="state() === 'uploading'" [class.step--done]="state() === 'processing' || state() === 'done'">
+          <span class="step__dot"></span>
+          <span>Upload</span>
+        </div>
+        <div class="step" [class.step--active]="state() === 'processing'" [class.step--done]="state() === 'done'">
+          <span class="step__dot"></span>
+          <span>{{ isPdf() ? 'Render & clean pages' : 'Clean image' }}</span>
+        </div>
+        <div class="step" [class.step--active]="state() === 'processing'" [class.step--done]="state() === 'done'">
+          <span class="step__dot"></span>
+          <span>Extract text (DeepSeek)</span>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- ── Results ────────────────────────────────────────────────────────── -->
+  @if (isDone() && result()) {
+    <div class="results">
+
+      <!-- Header -->
+      <div class="results__header">
+        <div class="results__title-group">
+          <span class="badge badge--success">Done</span>
+          @if (isPdf()) {
+            <span class="badge badge--pdf">PDF</span>
+          }
+          <span class="results__filename">{{ selectedFile()?.name }}</span>
+          <span class="results__size">{{ fileSizeLabel() }}</span>
+          @if (pageLabel()) {
+            <span class="badge badge--info">{{ pageLabel() }}</span>
+          }
+        </div>
+        <button class="btn btn--ghost btn--sm" (click)="reset()">
+          &#8592; New file
+        </button>
+      </div>
+
+      <!-- Two-column layout -->
+      <div class="results__grid">
+
+        <!-- Image panel — shows first page for PDFs -->
+        <div class="panel">
+          <div class="panel__header">
+            <h3 class="panel__title">{{ isPdf() ? 'First Page' : 'Image' }}</h3>
+            <div class="tab-group">
+              <button
+                class="tab"
+                [class.tab--active]="activeTab() === 'processed'"
+                (click)="setTab('processed')"
+              >Cleaned</button>
+              <button
+                class="tab"
+                [class.tab--active]="activeTab() === 'original'"
+                (click)="setTab('original')"
+              >Original</button>
+            </div>
+          </div>
+
+          <div class="panel__image-wrap">
+            @if (displayedImageSrc()) {
+              <img
+                [src]="displayedImageSrc()"
+                [alt]="activeTab() === 'processed' ? 'Cleaned image' : 'Original image'"
+                class="panel__image"
+              />
+            }
+          </div>
+
+          <!-- Metadata chips -->
+          @if (result()?.metadata) {
+            <div class="meta-chips">
+              <span class="chip">
+                {{ result()!.metadata!.processedWidth }} × {{ result()!.metadata!.processedHeight }}px
+              </span>
+              <span class="chip">{{ result()!.metadata!.format }}</span>
+              <span class="chip">{{ result()!.metadata!.tokensUsed | number }} tokens</span>
+              @if ((result()!.metadata!.pageCount ?? 1) > 1) {
+                <span class="chip chip--accent">
+                  {{ result()!.metadata!.processedPageCount }}/{{ result()!.metadata!.pageCount }} pages
+                </span>
+              }
+            </div>
+
+            <!-- Processing steps accordion -->
+            <details class="steps-detail">
+              <summary class="steps-detail__summary">
+                {{ result()!.metadata!.processingSteps.length }} processing steps applied
+              </summary>
+              <ol class="steps-detail__list">
+                @for (step of result()!.metadata!.processingSteps; track $index) {
+                  <li>{{ step }}</li>
+                }
+              </ol>
+            </details>
+          }
+        </div>
+
+        <!-- Text panel -->
+        <div class="panel">
+          <div class="panel__header">
+            <h3 class="panel__title">Extracted Text</h3>
+            <div class="panel__actions">
+              <button class="btn btn--ghost btn--sm" (click)="copyText()">
+                {{ copyLabel() }}
+              </button>
+              <button class="btn btn--ghost btn--sm" (click)="downloadText()">
+                Download
+              </button>
+            </div>
+          </div>
+
+          <div class="panel__text-wrap">
+            @if (result()?.extractedText) {
+              <pre class="extracted-text">{{ result()!.extractedText }}</pre>
+            } @else {
+              <p class="no-text">No text was detected.</p>
+            }
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Key Details box — always shown below the two panels -->
+      <div class="panel">
+        <div class="panel__header">
+          <h3 class="panel__title">Key Details</h3>
+          @if (result()?.documentDetails?.documentType) {
+            <span class="badge badge--info">{{ result()!.documentDetails!.documentType }}</span>
+          }
+        </div>
+
+        @if (result()?.documentDetails) {
+          <div class="details-grid">
+            @if (result()!.documentDetails!.invoiceNumber) {
+              <div class="detail-item">
+                <span class="detail-item__label">Invoice No.</span>
+                <span class="detail-item__value">{{ result()!.documentDetails!.invoiceNumber }}</span>
+              </div>
+            }
+            @if (result()!.documentDetails!.invoiceDate) {
+              <div class="detail-item">
+                <span class="detail-item__label">Invoice Date</span>
+                <span class="detail-item__value">{{ result()!.documentDetails!.invoiceDate }}</span>
+              </div>
+            }
+            @if (result()!.documentDetails!.dueDate) {
+              <div class="detail-item">
+                <span class="detail-item__label">Due Date</span>
+                <span class="detail-item__value">{{ result()!.documentDetails!.dueDate }}</span>
+              </div>
+            }
+            @if (result()!.documentDetails!.vendorName) {
+              <div class="detail-item">
+                <span class="detail-item__label">Vendor / From</span>
+                <span class="detail-item__value">{{ result()!.documentDetails!.vendorName }}</span>
+              </div>
+            }
+            @if (result()!.documentDetails!.customerName) {
+              <div class="detail-item">
+                <span class="detail-item__label">Customer / To</span>
+                <span class="detail-item__value">{{ result()!.documentDetails!.customerName }}</span>
+              </div>
+            }
+            @if (result()!.documentDetails!.paymentTerms) {
+              <div class="detail-item">
+                <span class="detail-item__label">Payment Terms</span>
+                <span class="detail-item__value">{{ result()!.documentDetails!.paymentTerms }}</span>
+              </div>
+            }
+            @if (result()!.documentDetails!.currency) {
+              <div class="detail-item">
+                <span class="detail-item__label">Currency</span>
+                <span class="detail-item__value">{{ result()!.documentDetails!.currency }}</span>
+              </div>
+            }
+            @if (result()!.documentDetails!.subTotal) {
+              <div class="detail-item">
+                <span class="detail-item__label">Sub Total</span>
+                <span class="detail-item__value detail-item__value--amount">{{ result()!.documentDetails!.subTotal }}</span>
+              </div>
+            }
+            @if (result()!.documentDetails!.taxAmount) {
+              <div class="detail-item">
+                <span class="detail-item__label">Tax</span>
+                <span class="detail-item__value detail-item__value--amount">{{ result()!.documentDetails!.taxAmount }}</span>
+              </div>
+            }
+            @if (result()!.documentDetails!.totalAmount) {
+              <div class="detail-item detail-item--total">
+                <span class="detail-item__label">Total Amount</span>
+                <span class="detail-item__value detail-item__value--total">{{ result()!.documentDetails!.totalAmount }}</span>
+              </div>
+            }
+            @for (entry of objectEntries(result()!.documentDetails!.additionalFields); track entry[0]) {
+              <div class="detail-item">
+                <span class="detail-item__label">{{ entry[0] }}</span>
+                <span class="detail-item__value">{{ entry[1] }}</span>
+              </div>
+            }
+          </div>
+        } @else {
+          <div class="details-empty">
+            <span class="details-empty__icon">&#9432;</span>
+            Could not extract key details from this document. Check backend logs for more info.
+          </div>
+        }
+      </div>
+
+    </div>
+  }
+
+</section>
