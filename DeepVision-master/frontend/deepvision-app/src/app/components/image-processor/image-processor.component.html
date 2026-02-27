@@ -88,7 +88,7 @@
         </div>
         <div class="step" [class.step--active]="state() === 'processing'" [class.step--done]="state() === 'done'">
           <span class="step__dot"></span>
-          <span>Extract text (DeepSeek)</span>
+          <span>Extract text (AI)</span>
         </div>
       </div>
     </div>
@@ -142,7 +142,9 @@
               <img
                 [src]="displayedImageSrc()"
                 [alt]="activeTab() === 'processed' ? 'Cleaned image' : 'Original image'"
-                class="panel__image"
+                class="panel__image panel__image--clickable"
+                (click)="openLightbox()"
+                title="Click to enlarge"
               />
             }
           </div>
@@ -287,6 +289,42 @@
         }
       </div>
 
+    </div>
+  }
+
+  <!-- ── Lightbox ───────────────────────────────────────────────────────── -->
+  @if (lightboxOpen()) {
+    <div
+      class="lightbox"
+      (click)="closeLightbox()"
+      (mousemove)="onPanMove($event)"
+      (mouseup)="onPanEnd()"
+      (mouseleave)="onPanEnd()"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Image preview"
+    >
+      <button class="lightbox__close" (click)="closeLightbox()" aria-label="Close">&times;</button>
+
+      <img
+        [src]="displayedImageSrc()"
+        [alt]="activeTab() === 'processed' ? 'Cleaned image' : 'Original image'"
+        class="lightbox__image"
+        [style.transform]="lightboxTransform()"
+        [style.cursor]="lightboxCursor()"
+        [style.transition]="isPanning() ? 'none' : 'transform 0.18s ease'"
+        (click)="onLightboxImageClick($event)"
+        (wheel)="onLightboxWheel($event)"
+        (mousedown)="onPanStart($event)"
+      />
+
+      <div class="lightbox__hint">
+        @if (zoomScale() === 1) {
+          Scroll or click to zoom
+        } @else {
+          {{ zoomPercent() }}% &nbsp;·&nbsp; click to reset
+        }
+      </div>
     </div>
   }
 

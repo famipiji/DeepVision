@@ -33,6 +33,16 @@ export class ImageProcessorComponent {
   errorMessage = signal<string | null>(null);
   activeTab = signal<'original' | 'processed'>('processed');
   copyLabel = signal('Copy');
+  lightboxOpen = signal(false);
+  zoomScale   = signal(1);
+  panX        = signal(0);
+  panY        = signal(0);
+  isPanning   = signal(false);
+
+  private _panStartX = 0;
+  private _panStartY = 0;
+  private _panOriginX = 0;
+  private _panOriginY = 0;
 
   // ── Computed ─────────────────────────────────────────────────────────────
   isIdle = computed(() => this.state() === 'idle');
@@ -44,7 +54,7 @@ export class ImageProcessorComponent {
     const kind = this.isPdf() ? 'PDF' : 'image';
     switch (this.state()) {
       case 'uploading':   return `Uploading ${kind}…`;
-      case 'processing':  return 'DeepSeek is extracting text…';
+      case 'processing':  return 'Ai is extracting text…';
       case 'done':        return 'Done';
       case 'error':       return 'Error';
       default:            return '';
@@ -70,6 +80,17 @@ export class ImageProcessorComponent {
     const f = this.selectedFile();
     return f ? this.imageService.formatFileSize(f.size) : '';
   });
+
+  lightboxTransform = computed(() =>
+    `translate(${this.panX()}px, ${this.panY()}px) scale(${this.zoomScale()})`
+  );
+
+  lightboxCursor = computed(() => {
+    if (this.zoomScale() <= 1) return 'zoom-in';
+    return this.isPanning() ? 'grabbing' : 'grab';
+  });
+
+  zoomPercent = computed(() => Math.round(this.zoomScale() * 100));
 
   constructor(private imageService: ImageService) {}
 
@@ -157,6 +178,60 @@ export class ImageProcessorComponent {
     setTimeout(() => {
       if (this.state() === 'uploading') this.state.set('processing');
     }, 800);
+  }
+
+  openLightbox(): void {
+    this.lightboxOpen.set(true);
+    this._resetZoom();
+  }
+
+  closeLightbox(): void {
+    this.lightboxOpen.set(false);
+    this._resetZoom();
+  }
+
+  private _resetZoom(): void {
+    this.zoomScale.set(1);
+    this.panX.set(0);
+    this.panY.set(0);
+  }
+
+  onLightboxImageClick(event: MouseEvent): void {
+    event.stopPropagation();
+    if (this.zoomScale() !== 1) {
+      this._resetZoom();
+    } else {
+      this.zoomScale.set(2.5);
+    }
+  }
+
+  onLightboxWheel(event: WheelEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const factor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
+    const next = Math.min(5, Math.max(1, this.zoomScale() * factor));
+    this.zoomScale.set(next);
+    if (next <= 1) { this.panX.set(0); this.panY.set(0); }
+  }
+
+  onPanStart(event: MouseEvent): void {
+    if (this.zoomScale() <= 1) return;
+    event.preventDefault();
+    this.isPanning.set(true);
+    this._panStartX  = event.clientX;
+    this._panStartY  = event.clientY;
+    this._panOriginX = this.panX();
+    this._panOriginY = this.panY();
+  }
+
+  onPanMove(event: MouseEvent): void {
+    if (!this.isPanning()) return;
+    this.panX.set(this._panOriginX + event.clientX - this._panStartX);
+    this.panY.set(this._panOriginY + event.clientY - this._panStartY);
+  }
+
+  onPanEnd(): void {
+    this.isPanning.set(false);
   }
 
   reset(): void {
