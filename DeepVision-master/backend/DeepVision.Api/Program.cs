@@ -12,14 +12,14 @@ builder.Services.AddSwaggerGen(options =>
     {
         Title = "DeepVision API",
         Version = "v1",
-        Description = "Image cleaning and text extraction powered by DeepSeek AI"
+        Description = "Image cleaning and text extraction powered by Groq AI"
     });
 });
 
-// HttpClient for DeepSeek API calls
+// HttpClient for Groq API calls
 builder.Services.AddHttpClient<IDeepSeekService, DeepSeekService>(client =>
 {
-    client.Timeout = TimeSpan.FromMinutes(10);
+    client.Timeout = TimeSpan.FromSeconds(60);
 });
 
 builder.Services.AddScoped<IImageProcessingService, ImageProcessingService>();

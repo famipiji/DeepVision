@@ -1,21 +1,33 @@
 # DeepVision — AI Image Cleaner & Text Extractor
 
-A prototype that uses **DeepSeek AI** as the core engine to:
+A prototype that uses **Groq AI** (Llama 3.3 70B) as the core engine to:
 
 1. **Clean / pre-process** an uploaded image (contrast, brightness, sharpening, denoising via ImageSharp)
-2. **Extract text** from the cleaned image using DeepSeek's vision/multimodal API
-3. **Display** the original image, the cleaned image, and the extracted text side-by-side in a web UI
+2. **Extract text** from the cleaned image using Tesseract OCR
+3. **Analyse** the extracted text with Groq to identify structured document fields
+4. **Display** the original image, the cleaned image, extracted text, and key details side-by-side in a web UI
+
+---
+
+## Screenshots
+
+![Upload screen](docs/screenshots/upload.png)
+
+![Extraction result](docs/screenshots/extraction.png)
+
+![Key details panel](docs/screenshots/key-details.png)
 
 ---
 
 ## Stack
 
-| Layer    | Technology                        |
-|----------|-----------------------------------|
-| Frontend | Angular 17 (standalone components, signals) |
-| Backend  | ASP.NET Core 8 Web API (C#)       |
-| AI       | DeepSeek API (chat/vision)        |
-| Images   | SixLabors.ImageSharp              |
+| Layer    | Technology                                   |
+|----------|----------------------------------------------|
+| Frontend | Angular 17 (standalone components, signals)  |
+| Backend  | ASP.NET Core 8 Web API (C#)                  |
+| AI       | Groq API — Llama 3.3 70B Versatile           |
+| OCR      | Tesseract 5 (local, offline)                 |
+| Images   | SixLabors.ImageSharp                         |
 
 ---
 
@@ -29,9 +41,10 @@ DeepVision/
 │       ├── Models/                          # Request/response DTOs
 │       ├── Services/
 │       │   ├── ImageProcessingService.cs    # ImageSharp cleaning pipeline
-│       │   └── DeepSeekService.cs           # DeepSeek API client
+│       │   └── DeepSeekService.cs           # Groq API client
 │       ├── Program.cs
-│       └── appsettings.json                 # ← put your API key here
+│       ├── appsettings.json                 # Config (no secrets)
+│       └── appsettings.Development.json     # ← put your API key here (gitignored)
 └── frontend/
     └── deepvision-app/                      # Angular 17 app
         └── src/app/
@@ -47,28 +60,23 @@ DeepVision/
 - [.NET 8 SDK](https://dotnet.microsoft.com/download)
 - [Node.js 18+](https://nodejs.org/) & npm
 - [Angular CLI](https://angular.io/cli): `npm install -g @angular/cli`
-- A **DeepSeek API key** from [platform.deepseek.com](https://platform.deepseek.com/)
+- A **Groq API key** from [console.groq.com](https://console.groq.com/)
 
 ---
 
 ## Setup & Run
 
-### 1. Configure the DeepSeek API Key
+### 1. Configure the Groq API Key
 
-Edit `backend/DeepVision.Api/appsettings.json`:
+Create `backend/DeepVision.Api/appsettings.Development.json` (this file is gitignored):
 
 ```json
-"DeepSeek": {
-  "ApiKey": "sk-xxxxxxxxxxxxxxxxxxxxxxxx",
-  "BaseUrl": "https://api.deepseek.com",
-  "Model": "deepseek-chat",
-  ...
+{
+  "Groq": {
+    "ApiKey": "gsk_your_key_here"
+  }
 }
 ```
-
-> **Note on models**: If your DeepSeek account has access to a vision model
-> (e.g. `deepseek-vl2`), set `"Model": "deepseek-vl2"` for best OCR results.
-> The default `deepseek-chat` also supports image inputs via its multimodal API.
 
 ### 2. Run the Backend
 
@@ -95,10 +103,10 @@ ng serve
 
 ### `POST /api/image/process`
 
-Upload an image for cleaning and text extraction.
+Upload an image or PDF (up to 5 pages) for cleaning and text extraction.
 
 **Request**: `multipart/form-data`
-- `image` (file) — the image to process
+- `image` (file) — JPEG, PNG, WebP, BMP, TIFF, or PDF · max 20 MB
 
 **Response**: `application/json`
 
@@ -108,21 +116,23 @@ Upload an image for cleaning and text extraction.
   "originalImageBase64": "...",
   "processedImageBase64": "...",
   "imageMimeType": "image/png",
-  "extractedText": "Hello World\nThis is extracted text...",
+  "extractedText": "GEMILITE SDN. BERHAD INVOICE ...",
+  "documentDetails": {
+    "documentType": "Invoice",
+    "invoiceNumber": "308271",
+    "invoiceDate": "05 Jun 13",
+    "vendorName": "GEMILITE SDN. BERHAD",
+    "customerName": "Energy Formula Sdn Bhd",
+    "totalAmount": "1296.90",
+    "currency": "MYR",
+    "paymentTerms": "120 DAYS"
+  },
   "metadata": {
     "originalWidth": 1920,
     "originalHeight": 1080,
-    "processedWidth": 1920,
-    "processedHeight": 1080,
-    "format": "PNG",
-    "fileSizeBytes": 204800,
-    "processingSteps": [
-      "Loaded image: 1920x1080",
-      "Auto-oriented (EXIF correction)",
-      "Applied contrast enhancement...",
-      "..."
-    ],
-    "tokensUsed": 312
+    "tokensUsed": 312,
+    "pageCount": 1,
+    "processedPageCount": 1
   }
 }
 ```
@@ -135,15 +145,15 @@ Returns `{ "status": "ok" }`.
 
 ## Image Cleaning Pipeline
 
-The backend applies these steps before sending the image to DeepSeek:
+The backend applies these steps before OCR:
 
 1. **Auto-orient** — corrects EXIF rotation
-2. **Resize** — scales down to max 2048px (longest side) to keep API calls efficient
+2. **Resize** — scales down to max 2048px (longest side)
 3. **Contrast +15%, Brightness +5%** — improves text visibility
 4. **Sharpen** — sharpens edges for cleaner character recognition
 5. **Mild denoise** — Gaussian blur (σ=0.4) to reduce noise
 6. **Re-sharpen** — recovers crispness after denoising
-7. **Encode as PNG** — lossless output for best quality
+7. **Encode as PNG** — lossless output for best OCR quality
 
 ---
 
@@ -152,7 +162,7 @@ The backend applies these steps before sending the image to DeepSeek:
 | Problem | Solution |
 |---------|----------|
 | `Network error — is the backend running?` | Start the backend with `dotnet run` |
-| `DeepSeek API returned 401` | Check your API key in `appsettings.json` |
-| `DeepSeek API returned 400` | The model may not support image inputs; try `deepseek-vl2` |
+| `Groq API returned 401` | Check your API key in `appsettings.Development.json` |
 | CORS error in browser | Ensure the backend allows `http://localhost:4200` (already configured) |
 | File too large | Max upload is 20 MB |
+| Key details not showing | Check backend logs; Groq API may have returned an error |

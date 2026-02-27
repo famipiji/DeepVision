@@ -50,8 +50,8 @@ public class DeepSeekService : IDeepSeekService
             }
 
             // Stage 2: Single LLM call → clean text + document details
-            var apiKey = _configuration["DeepSeek:ApiKey"] ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(apiKey) || apiKey == "YOUR_DEEPSEEK_API_KEY_HERE")
+            var apiKey = _configuration["Groq:ApiKey"] ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(apiKey))
             {
                 _logger.LogWarning("API key not configured — returning raw Tesseract output");
                 return new CombinedExtractionResult { ExtractedText = rawText, TokensUsed = 0, Success = true };
@@ -90,9 +90,9 @@ public class DeepSeekService : IDeepSeekService
 
     private async Task<CombinedExtractionResult> ExtractAllWithLlmAsync(string rawOcrText, string apiKey)
     {
-        var baseUrl = _configuration["DeepSeek:BaseUrl"] ?? "https://api.deepseek.com";
-        var model = _configuration["DeepSeek:Model"] ?? "deepseek-chat";
-        var maxTokens = int.Parse(_configuration["DeepSeek:MaxTokens"] ?? "1024");
+        var baseUrl = _configuration["Groq:BaseUrl"] ?? "https://api.groq.com/openai/v1";
+        var model = _configuration["Groq:Model"] ?? "llama-3.3-70b-versatile";
+        var maxTokens = int.Parse(_configuration["Groq:MaxTokens"] ?? "1024");
 
         const string systemPrompt =
             "You are a document analyst. Extract key fields from the text. " +
@@ -117,6 +117,7 @@ public class DeepSeekService : IDeepSeekService
             Model = model,
             MaxTokens = maxTokens,
             Temperature = 0.1,
+            ResponseFormat = new ResponseFormat { Type = "json_object" },
             Messages =
             [
                 new DeepSeekMessage { Role = "system", Content = systemPrompt },
@@ -134,10 +135,11 @@ public class DeepSeekService : IDeepSeekService
 
         if (!httpResponse.IsSuccessStatusCode)
         {
-            _logger.LogWarning("LLM call failed {Status} — falling back to raw OCR. Body: {Body}",
-                httpResponse.StatusCode, responseJson);
+            _logger.LogError("Groq API call failed {Status}. Body: {Body}", httpResponse.StatusCode, responseJson);
             return new CombinedExtractionResult { ExtractedText = rawOcrText, TokensUsed = 0, Success = true };
         }
+
+        _logger.LogDebug("Groq raw response: {Response}", responseJson);
 
         var response = JsonSerializer.Deserialize<DeepSeekResponse>(responseJson, JsonOptions);
         var content = response?.Choices?.FirstOrDefault()?.Message?.Content;
@@ -145,11 +147,7 @@ public class DeepSeekService : IDeepSeekService
         if (string.IsNullOrWhiteSpace(content))
             return new CombinedExtractionResult { ExtractedText = rawOcrText, TokensUsed = 0, Success = true };
 
-        // Strip DeepSeek R1 <think>...</think> block before parsing
         content = content.Trim();
-        var thinkEnd = content.LastIndexOf("</think>", StringComparison.OrdinalIgnoreCase);
-        if (thinkEnd >= 0)
-            content = content[(thinkEnd + "</think>".Length)..].Trim();
         if (content.StartsWith("```"))
         {
             var firstNewLine = content.IndexOf('\n');
@@ -217,7 +215,7 @@ public class DeepSeekService : IDeepSeekService
         }
         catch (JsonException jex)
         {
-            _logger.LogWarning("JSON parse failed: {Message} — returning raw OCR text", jex.Message);
+            _logger.LogWarning("JSON parse failed: {Message}. Content was: {Content}", jex.Message, content);
             return new CombinedExtractionResult { ExtractedText = rawOcrText, Success = true };
         }
     }
