@@ -1,0 +1,135 @@
+# iVault Plus ECM - Infrastructure Manifest
+services:
+  # 1. Primary Database
+  db:
+    image: postgres:16
+    container_name: ivault-db
+    environment:
+      POSTGRES_USER: ivault_admin
+      POSTGRES_PASSWORD: password123
+      POSTGRES_DB: ivault_ecm
+    ports:
+      - "5435:5432"
+    volumes:
+      - C:\Users\fahmi\ivault_data\pgdata:/var/lib/postgresql/data # Host mount
+    networks:
+      - ivault-network
+
+  # 2. Search Engine - Host mount prevents VHDX expansion
+  search:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.3.3
+    container_name: ivault-search
+    ports:
+      - "9201:9200"
+      - "9301:9300"
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+    volumes:
+      - C:\Users\fahmi\ivault_data\esdata:/usr/share/elasticsearch/data # Externalized storage
+    networks:
+      - ivault-network
+
+  # 3. Message Broker
+  messenger:
+    image: rabbitmq:3-management
+    container_name: ivault-mq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ivault-network
+
+  # 4. Object Storage (SeaweedFS) - 2-level hex-sharding optimization
+  ivault-master:
+    image: chrislusf/seaweedfs
+    container_name: iVault-Core-Master
+    command: "master"
+    ports:
+      - "9333:9333"
+    networks:
+      - ivault-network
+
+  ivault-filer:
+    image: chrislusf/seaweedfs
+    container_name: iVault-Storage-Gateway
+    command: "filer -master=ivault-master:9333"
+    ports:
+      - "9000:8888"
+      - "18888:18888"
+    depends_on:
+      - ivault-master
+    networks:
+      - ivault-network
+
+  ivault-volume:
+    image: chrislusf/seaweedfs
+    container_name: iVault-Storage-Node-01
+    command: "volume -mserver=ivault-master:9333 -port=8080"
+    ports:
+      - "8080:8080"
+    volumes:
+      - C:\Users\fahmi\ivault_data\seaweed:/data # Moved outside VHDX
+    depends_on:
+      - ivault-master
+    networks:
+      - ivault-network
+  
+  # 5. OCR Worker - Live Mount for Rapid Development[cite: 1]
+  ivault-ocr:
+    build: .  # This tells Docker to use the local Dockerfile
+    container_name: ivault-ocr
+    ports:
+      - "8100:8000"
+    environment:
+      - PADDLE_DEVICE=cpu
+    volumes:
+      - ./ocr_server.py:/app/ocr_server.py 
+      - ./paddle_models:/root/.paddleocr 
+    working_dir: /app
+    restart: always
+    networks:
+      - ivault-network
+
+  ivault-worker:
+    build:
+      context: ..
+      dockerfile: iVault.Worker/Dockerfile
+    container_name: ivault-worker
+    restart: always
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=db;Database=ivault_ecm;Username=ivault_admin;Password=password123
+      - RabbitMQ__HostName=messenger
+      - RabbitMQ__UserName=guest
+      - RabbitMQ__Password=guest
+      - Elasticsearch__Uri=http://search:9200
+      - SeaweedFS__BaseAddress=http://ivault-filer:8888 
+      - PaddleOcr__BaseAddress=http://ivault-ocr:8000 
+      - Encryption__Key=Your32CharacterSecretKeyHere123
+      - Encryption__IV=Your16CharIVHere
+    depends_on:
+      messenger:
+        condition: service_healthy  # Waits for RabbitMQ to be fully ready
+      db:
+        condition: service_started
+      search:
+        condition: service_started
+      ivault-filer:
+        condition: service_started
+      ivault-ocr:
+        condition: service_started
+    networks:
+      - ivault-network
+
+networks:
+    ivault-network:
+      driver: bridge
+
+volumes:
+  # Named volumes removed in favor of host paths for large data sets[cite: 1]
+  ivault-ocr-data:

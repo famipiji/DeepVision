@@ -1,0 +1,376 @@
+import { Component, signal, computed, ChangeDetectionStrategy, Input, Output, EventEmitter } from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+// ==========================================
+// 1. DATA MODELS & TYPES
+// ==========================================
+interface Message {
+  id: string;
+  sender: string;
+  initials: string;
+  text: string;
+  time: string;
+  isMe: boolean;
+}
+
+interface EcmRecord {
+  id: string;
+  recordName: string;
+  type: 'folder' | 'record';
+  contentFile?: { name: string; type: 'pdf' | 'docx' | 'xlsx'; size: string; };
+  metadata: Record<string, any>;
+  modifiedDate: string;
+  parentId?: string | null;
+}
+
+interface Workspace {
+  id: string;
+  name: string;
+  members: number;
+  description: string;
+  status: 'On-Going' | 'Closed';
+  cabinetFiles: EcmRecord[];
+  discussion: Message[];
+}
+
+interface WorkflowTask {
+  id: string;
+  title: string;
+  priority: 'High' | 'Medium' | 'Low';
+  status: 'Incoming' | 'In-Progress' | 'Completed';
+  initiatedBy: string;
+  dueDate: string;
+  currentStep: number;
+  steps: string[];
+  record: EcmRecord;
+}
+
+// ==========================================
+// 2. MOCK DATA CONSTANTS
+// ==========================================
+const MOCK_RECORDS: EcmRecord[] = [
+  { id: 'root1', recordName: 'Finance Department', type: 'folder', parentId: null, modifiedDate: '2026-04-20', metadata: {} },
+  { id: 'r1', recordName: 'Q1 Sales Ledger', type: 'record', parentId: 'sub1', modifiedDate: '2026-05-01', contentFile: { name: 'ledger_q1.xlsx', type: 'xlsx', size: '2.4MB' }, metadata: { Dept: 'Finance', Amount: '$45,000' } },
+  { id: 'r3', recordName: 'Vendor Contract - Alpha', type: 'record', parentId: 'sub1', modifiedDate: '2026-05-01', contentFile: { name: 'contract_alpha.pdf', type: 'pdf', size: '1.1MB' }, metadata: { Legal: 'Approved', Expiry: '2027' } }
+];
+
+const MOCK_WORKFLOWS: WorkflowTask[] = [
+  {
+    id: 'wf1',
+    title: 'Q1 Budget Approval',
+    priority: 'High',
+    status: 'Incoming',
+    initiatedBy: 'Finance Director',
+    dueDate: '2026-05-10',
+    currentStep: 1,
+    steps: ['Drafting', 'Manager Review', 'Director Approval', 'Final Archive'],
+    record: MOCK_RECORDS[1]
+  },
+  {
+    id: 'wf2',
+    title: 'Legal Review: Alpha Corp',
+    priority: 'Medium',
+    status: 'In-Progress',
+    initiatedBy: 'Legal Dept',
+    dueDate: '2026-05-15',
+    currentStep: 2,
+    steps: ['Initial Filing', 'Contract Review', 'Risk Assessment', 'Execution'],
+    record: MOCK_RECORDS[2]
+  }
+];
+
+// ==========================================
+// 3. SUB-COMPONENTS
+// ==========================================
+
+/** DISCUSSION COMPONENT */
+@Component({
+  selector: 'app-discussion',
+  standalone: true,
+  imports: [CommonModule],
+  template: `
+    <div class="flex-1 flex flex-col bg-white dark:bg-slate-800 overflow-hidden h-full">
+      <div class="p-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 flex justify-between items-center">
+        <div class="flex items-center gap-3">
+          <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+          <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Active Discussion</span>
+        </div>
+      </div>
+      <div class="flex-1 overflow-y-auto p-6 space-y-6">
+        @for (msg of messages; track msg.id) {
+          <div class="flex items-start gap-4" [class.flex-row-reverse]="msg.isMe">
+            <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-[10px] font-black"
+                 [class.bg-indigo-600]="msg.isMe" [class.text-white]="msg.isMe"
+                 [class.bg-slate-200]="!msg.isMe" [class.text-slate-600]="!msg.isMe">
+              {{ msg.initials }}
+            </div>
+            <div class="max-w-[70%] space-y-1" [class.text-right]="msg.isMe">
+              <div class="flex items-center gap-2" [class.flex-row-reverse]="msg.isMe">
+                <span class="text-[10px] font-bold text-slate-900 dark:text-slate-100">{{ msg.sender }}</span>
+                <span class="text-[9px] text-slate-400">{{ msg.time }}</span>
+              </div>
+              <div class="p-3 rounded-2xl text-xs shadow-sm"
+                   [class.bg-indigo-600]="msg.isMe" [class.text-white]="msg.isMe" [class.rounded-tr-none]="msg.isMe"
+                   [class.bg-slate-100]="!msg.isMe" [class.text-slate-700]="!msg.isMe" [class.rounded-tl-none]="!msg.isMe">
+                {{ msg.text }}
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+      <div class="p-4 border-t border-slate-100 dark:border-slate-700">
+        <div class="flex items-center gap-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 rounded-xl px-4 py-2">
+          <input #msgInput type="text" (keyup.enter)="onSend(msgInput)" placeholder="Type a message..." class="flex-1 bg-transparent outline-none text-xs py-1">
+          <button (click)="onSend(msgInput)" class="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  `
+})
+class DiscussionComponent {
+  @Input() messages: Message[] = [];
+  @Output() sendMessage = new EventEmitter<string>();
+  onSend(input: HTMLInputElement) {
+    if (input.value.trim()) {
+      this.sendMessage.emit(input.value);
+      input.value = '';
+    }
+  }
+}
+
+// ==========================================
+// 4. MAIN APPLICATION COMPONENT
+// ==========================================
+
+@Component({
+  selector: 'app-root',
+  standalone: true,
+  imports: [CommonModule, DiscussionComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div [class.dark]="isDarkMode()" class="h-full">
+      <div class="min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 flex flex-col h-screen overflow-hidden text-[13px]">
+        
+        <!-- HEADER -->
+        <header class="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 h-14 flex items-center justify-between px-6 shrink-0 z-50">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 bg-indigo-700 rounded flex items-center justify-center text-white"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg></div>
+            <h1 class="text-lg font-bold tracking-tight uppercase"><span class="text-indigo-700 dark:text-indigo-400">iVault</span>Plus</h1>
+          </div>
+          <div class="flex items-center gap-4">
+            <button (click)="isDarkMode.set(!isDarkMode())" class="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700">
+              <svg *ngIf="isDarkMode()" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72 1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+              <svg *ngIf="!isDarkMode()" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            </button>
+            <div class="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-bold text-xs flex items-center justify-center">JD</div>
+          </div>
+        </header>
+
+        <!-- NAV -->
+        <nav class="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 h-12 flex items-center shrink-0">
+          <div class="flex space-x-2">
+            @for (tab of tabs; track tab) {
+              <button (click)="activeTab.set(tab)" 
+                [class.text-indigo-700]="activeTab() === tab" 
+                class="text-[10px] uppercase font-bold px-4 py-2 rounded-md transition-all">{{ tab }}</button>
+            }
+          </div>
+        </nav>
+
+        <div class="flex-1 flex overflow-hidden">
+          
+          <!-- SIDEBAR -->
+          <aside class="w-1/5 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col shrink-0 p-2">
+            @if (activeTab() === 'Dashboard') {
+              <button (click)="viewingWorkspaceId.set(null)" class="w-full flex items-center gap-3 p-2.5 rounded-lg font-bold mb-2" [class.bg-indigo-50]="!viewingWorkspaceId()">General View</button>
+              @if (viewingWorkspaceId()) {
+                <button (click)="currentView.set('discussion')" [class.bg-indigo-50]="currentView() === 'discussion'" class="w-full flex items-center gap-3 p-2.5 rounded-lg font-bold">Discussion</button>
+                <button (click)="currentView.set('cabinet')" [class.bg-indigo-50]="currentView() === 'cabinet'" class="w-full flex items-center gap-3 p-2.5 rounded-lg font-bold">Cabinet</button>
+              }
+            }
+            @if (activeTab() === 'Repository') {
+              @for (root of catalogRoots(); track root.id) {
+                <button (click)="selectFolder(root.id)" [class.bg-indigo-50]="selectedFolderId() === root.id" class="w-full flex items-center gap-3 p-2.5 rounded-lg text-left font-bold truncate">
+                  {{ root.recordName }}
+                </button>
+              }
+            }
+            @if (activeTab() === 'Workflows') {
+              <div class="p-2 space-y-1">
+                <button (click)="workflowFilter.set('Incoming')" [class.bg-indigo-50]="workflowFilter() === 'Incoming'" class="w-full flex items-center gap-3 p-2.5 rounded-lg font-bold text-slate-600">
+                   <div class="w-2 h-2 bg-indigo-500 rounded-full"></div> Incoming Tasks
+                </button>
+                <button (click)="workflowFilter.set('In-Progress')" [class.bg-indigo-50]="workflowFilter() === 'In-Progress'" class="w-full flex items-center gap-3 p-2.5 rounded-lg font-bold text-slate-600">
+                   <div class="w-2 h-2 bg-amber-500 rounded-full"></div> Active Actions
+                </button>
+              </div>
+            }
+          </aside>
+
+          <!-- MAIN CONTENT AREA -->
+          <section class="flex-1 bg-slate-50 dark:bg-slate-900 flex flex-col overflow-hidden relative">
+            
+            <!-- Dashboard Home -->
+            @if (activeTab() === 'Dashboard' && !viewingWorkspaceId()) {
+              <div class="p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                @for (ws of workspaces; track ws.id) {
+                  <div (dblclick)="viewingWorkspaceId.set(ws.id)" class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm cursor-pointer hover:shadow-md">
+                    <span class="text-[9px] font-black bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded uppercase">{{ ws.status }}</span>
+                    <h4 class="font-bold text-slate-900 mt-2">{{ ws.name }}</h4>
+                    <p class="text-xs text-slate-500 mt-1">{{ ws.description }}</p>
+                  </div>
+                }
+              </div>
+            }
+
+            <!-- Workflows Explorer -->
+            @if (activeTab() === 'Workflows') {
+              <div class="flex-1 flex flex-col overflow-hidden bg-white">
+                <div class="p-4 border-b border-slate-100 flex items-center justify-between">
+                  <h3 class="text-xs font-black uppercase tracking-widest text-slate-400">{{ workflowFilter() }} Inbox</h3>
+                </div>
+                <div class="flex-1 overflow-y-auto">
+                  <table class="w-full text-left">
+                    <thead class="bg-slate-50 text-[10px] uppercase font-black text-slate-400">
+                      <tr><th class="px-6 py-4">Process Title</th><th class="px-6 py-4">Priority</th><th class="px-6 py-4">Initiator</th><th class="px-6 py-4">Due Date</th></tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-50 text-xs">
+                      @for (wf of filteredWorkflows(); track wf.id) {
+                        <tr (click)="selectedWorkflowId.set(wf.id)" [class.bg-indigo-50]="selectedWorkflowId() === wf.id" class="hover:bg-slate-50 cursor-pointer">
+                          <td class="px-6 py-4">
+                            <div class="font-bold text-slate-800">{{ wf.title }}</div>
+                            <div class="text-[10px] text-slate-400">{{ wf.record.recordName }}</div>
+                          </td>
+                          <td class="px-6 py-4">
+                            <span [class]="wf.priority === 'High' ? 'text-red-600 bg-red-50' : 'text-slate-600 bg-slate-50'" class="px-2 py-0.5 rounded font-black text-[9px] uppercase">
+                              {{ wf.priority }}
+                            </span>
+                          </td>
+                          <td class="px-6 py-4 text-slate-500">{{ wf.initiatedBy }}</td>
+                          <td class="px-6 py-4 text-slate-400">{{ wf.dueDate }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+                
+                <!-- VISUAL WORKFLOW TRACKER (Overlay or Bottom Panel) -->
+                @if (selectedWorkflow(); as wf) {
+                  <div class="h-1/2 border-t border-slate-200 bg-slate-50 flex flex-col">
+                    <div class="flex items-center justify-between p-4 bg-white border-b border-slate-100">
+                       <span class="text-[10px] font-black uppercase text-indigo-600">Visual Flow & Asset Preview</span>
+                       <div class="flex gap-2">
+                         <button class="px-4 py-1.5 bg-indigo-600 text-white rounded text-[10px] font-bold">Approve</button>
+                         <button class="px-4 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-bold">Reject</button>
+                       </div>
+                    </div>
+                    <div class="flex-1 flex overflow-hidden">
+                       <!-- Progress Steps -->
+                       <div class="w-1/3 p-6 border-r border-slate-200 overflow-y-auto">
+                          <div class="space-y-8 relative">
+                             <div class="absolute left-[11px] top-2 bottom-2 w-[2px] bg-slate-200"></div>
+                             @for (step of wf.steps; track step; let i = $index) {
+                               <div class="flex items-center gap-4 relative z-10">
+                                  <div [class]="i < wf.currentStep ? 'bg-green-500' : (i === wf.currentStep ? 'bg-indigo-600 ring-4 ring-indigo-100' : 'bg-slate-300')" 
+                                       class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] text-white font-bold">
+                                    {{ i + 1 }}
+                                  </div>
+                                  <div>
+                                    <p [class.text-indigo-700]="i === wf.currentStep" [class.font-bold]="i === wf.currentStep" class="text-xs text-slate-700">{{ step }}</p>
+                                    <p class="text-[9px] text-slate-400">System State: {{ i < wf.currentStep ? 'Verified' : (i === wf.currentStep ? 'In Review' : 'Pending') }}</p>
+                                  </div>
+                               </div>
+                             }
+                          </div>
+                       </div>
+                       <!-- Mini Asset Preview -->
+                       <div class="flex-1 p-6 bg-white overflow-y-auto">
+                          <div class="border rounded-lg p-6 bg-slate-50/30">
+                            <div class="flex items-center gap-4 mb-6">
+                               <div class="w-12 h-12 bg-white border rounded shadow-sm flex items-center justify-center">
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-indigo-600"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                               </div>
+                               <div>
+                                  <h4 class="font-bold text-slate-900">{{ wf.record.recordName }}</h4>
+                                  <p class="text-[10px] text-slate-400">Object Type: {{ wf.record.contentFile?.type?.toUpperCase() || 'Metadata' }}</p>
+                               </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                               @for (key of getKeys(wf.record.metadata); track key) {
+                                 <div class="p-3 bg-white border border-slate-100 rounded-lg">
+                                    <p class="text-[8px] font-black uppercase text-slate-400 mb-1">{{ key }}</p>
+                                    <p class="text-xs font-bold text-slate-700">{{ wf.record.metadata[key] }}</p>
+                                 </div>
+                               }
+                            </div>
+                          </div>
+                       </div>
+                    </div>
+                  </div>
+                }
+              </div>
+            }
+
+            <!-- Discussion & Repository content (Omitted for brevity, logic remains as before) -->
+            @if (activeTab() === 'Dashboard' && viewingWorkspaceId() && currentView() === 'discussion') {
+              <app-discussion [messages]="activeWorkspace()?.discussion || []" (sendMessage)="onNewMessage($event)"></app-discussion>
+            }
+          </section>
+
+          <!-- INFO PANEL -->
+          <aside class="w-1/5 bg-white dark:bg-slate-800 border-l border-slate-200 dark:border-slate-700 p-4 shrink-0">
+             <div class="py-20 text-center text-slate-300 italic">Global Stats & Contextual Insight.</div>
+          </aside>
+        </div>
+      </div>
+    </div>
+  `,
+})
+export class App {
+  isDarkMode = signal(false);
+  tabs = ['Dashboard', 'Repository', 'Workflows', 'News'];
+  activeTab = signal('Dashboard');
+  currentView = signal<'discussion' | 'cabinet'>('discussion');
+  
+  viewingWorkspaceId = signal<string | null>(null);
+  selectedFolderId = signal<string | null>('root1');
+  selectedRecordId = signal<string | null>(null);
+  
+  // Workflow state
+  workflowFilter = signal<'Incoming' | 'In-Progress'>('Incoming');
+  selectedWorkflowId = signal<string | null>(null);
+
+  workspaces: Workspace[] = [
+    { 
+      id: 'ws1', 
+      name: 'Project Alpha Collaboration', 
+      members: 4, 
+      description: 'Phase 2 alpha rollout assets.', 
+      status: 'On-Going',
+      cabinetFiles: [],
+      discussion: []
+    }
+  ];
+
+  // Computed
+  filteredWorkflows = computed(() => MOCK_WORKFLOWS.filter(w => w.status === this.workflowFilter()));
+  selectedWorkflow = computed(() => MOCK_WORKFLOWS.find(w => w.id === this.selectedWorkflowId()));
+  activeWorkspace = computed(() => this.workspaces.find(w => w.id === this.viewingWorkspaceId()));
+  catalogRoots = computed(() => MOCK_RECORDS.filter(r => r.type === 'folder' && r.parentId === null));
+
+  // Handlers
+  onNewMessage(text: string) {
+    const ws = this.activeWorkspace();
+    if (ws) {
+      ws.discussion.push({
+        id: Date.now().toString(), sender: 'John Doe', initials: 'JD', text: text,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), isMe: true
+      });
+    }
+  }
+
+  selectFolder(id: string) { this.selectedFolderId.set(id); }
+  getKeys(obj: any) { return obj ? Object.keys(obj) : []; }
+}

@@ -1,0 +1,54 @@
+
+//=====ELASTICSEARCH=========
+//Clear ElasticSearch
+Invoke-RestMethod -Method Delete -Uri "http://localhost:9200/ivault-records"
+
+
+//=====POSTGRESQL=========
+//Clear Database
+TRUNCATE TABLE records, contents RESTART IDENTITY CASCADE;
+
+//Check Database
+SELECT *
+FROM contents 
+ORDER BY created_at DESC LIMIT 1;
+
+SELECT *
+FROM records
+ORDER BY created_at DESC LIMIT 1;
+
+//=====SEAWEEDFS=========
+//login to seaweedfs storage
+docker exec -it iVault-Core-Master weed shell
+
+//view files
+fs.ls /  				//for root
+fs.ls /ivault/15/65/    //for specific folder
+fs.ls /buckets/         //for all buckets
+
+//clear by bucket
+fs.rm -recursive -force /buckets/ivault_ecm/ (example for vault)
+fs.rm -recursive -force /topics (SeaweedFS Sink - LOGS)
+fs.rm -force "0627292123 (ZF8).pdf" (example for single file)
+
+//exit
+
+
+//====TRUNCATE DOCKER FILES=====
+docker image prune -a    //clear all image build files
+
+# Enter the disk utility
+diskpart
+
+# Select the file (Replace with your actual path from the image)
+select vdisk file="C:\Users\Admin\AppData\Local\Docker\wsl\disk\docker_data.vhdx"
+
+# Attach it as read-only for the operation
+attach vdisk readonly
+
+# The magic command to shrink it
+compact vdisk
+
+# Clean up
+detach vdisk
+exit

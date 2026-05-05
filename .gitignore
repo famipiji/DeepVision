@@ -1,0 +1,36 @@
+# IDE / Editor Settings
+.vs/
+.vscode/
+*.sln.dotsettings.user
+*.suo
+*.user
+
+# Build and Output Folders
+bin/
+obj/
+infrastructure/Custom Logs/
+
+# Local Database and Search Engine Data
+# Excludes the actual persistent data stored by Elasticsearch and PostgreSQL
+infrastructure/ivault_data/es/esdata/
+infrastructure/ivault_data/fs/pgdata/
+
+# Machine Learning Models (WHL Files/Inference Models)
+# Often excluded to keep the repo size small; download them via script instead
+infrastructure/paddle_models/whl/
+
+# Frontend Dependencies and Build Artifacts
+ivault-ui/node_modules/
+ivault-ui/build/
+ivault-ui/.env.local
+ivault-ui/.env.development.local
+ivault-ui/.env.test.local
+ivault-ui/.env.production.local
+
+# Frontend Cache
+ivault-ui/.cache/
+
+# OS Generated Files
+Thumbs.db
+desktop.ini
+.DS_Store

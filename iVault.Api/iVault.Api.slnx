@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="../iVault.Worker/iVault.Worker.csproj" Id="6ac8e148-371d-446a-ad71-1aa92c1fd6bb" />
+  <Project Path="iVault.Api.csproj" />
+</Solution>
